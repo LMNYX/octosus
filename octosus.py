@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+__version__ = "1.0.0"
+
 import argparse
 import hashlib
 import os
@@ -526,6 +528,10 @@ Examples:
 Environment:
   GITHUB_TOKEN   Used automatically if --token is not provided.
         """,
+    )
+    parser.add_argument(
+        "-v", "--version", action="version",
+        version=f"%(prog)s {__version__}",
     )
     parser.add_argument("repo_url", help="GitHub repository URL")
     parser.add_argument(

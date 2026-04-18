@@ -60,9 +60,12 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Generate tag
+      - name: Extract version
         id: tag
-        run: echo "tag=v1.0.0-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+        run: |
+          VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' octosus.py)
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Create release
         uses: softprops/action-gh-release@v2
