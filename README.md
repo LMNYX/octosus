@@ -93,3 +93,8 @@ octosus https://github.com/user/repo
 - `requests`
 - `rich`
 - `pyinstaller` (build only)
+
+# ⚠️ AI Disclosure
+
+> [!WARNING]
+> This script was made with the assistance of AI tools, due to my laziness and swift requirement to get this done. Please review the code carefully before using it in production environments.
