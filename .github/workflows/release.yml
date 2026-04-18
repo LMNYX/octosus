@@ -64,7 +64,7 @@ jobs:
         id: tag
         run: |
           VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' octosus.py)
-          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Create release
