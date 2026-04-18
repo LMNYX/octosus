@@ -14,12 +14,17 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact: octosus-linux-amd64
+          - os: ubuntu-24.04-arm
+            artifact: octosus-linux-arm64
           - os: macos-latest
             artifact: octosus-macos-amd64
           - os: macos-14
             artifact: octosus-macos-arm64
           - os: windows-latest
             artifact: octosus-windows-amd64.exe
+          - os: windows-latest
+            artifact: octosus-windows-arm64.exe
+            cross_arch: arm64
 
     runs-on: ${{ matrix.os }}
 
@@ -34,7 +39,7 @@ jobs:
         run: pip install requests rich pyinstaller
 
       - name: Build binary
-        run: pyinstaller --onefile --name ${{ matrix.artifact }} --clean --noconfirm octosus.py
+        run: pyinstaller --onefile --name ${{ matrix.artifact }} --clean --noconfirm ${{ matrix.cross_arch && format('--target-arch {0}', matrix.cross_arch) || '' }} octosus.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -71,8 +76,10 @@ jobs:
             | Platform | Binary |
             |----------|--------|
             | Linux x64 | `octosus-linux-amd64` |
+            | Linux ARM64 | `octosus-linux-arm64` |
             | macOS x64 | `octosus-macos-amd64` |
-            | macOS ARM | `octosus-macos-arm64` |
+            | macOS ARM64 | `octosus-macos-arm64` |
             | Windows x64 | `octosus-windows-amd64.exe` |
+            | Windows ARM64 | `octosus-windows-arm64.exe` |
           files: artifacts/*
           generate_release_notes: true
