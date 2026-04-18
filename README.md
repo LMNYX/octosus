@@ -67,8 +67,29 @@ python octosus.py https://github.com/user/repo
 
 Each commit uses 1-2 API calls (commit listing + tree fetch). File downloads via `raw.githubusercontent.com` are unlimited. For repositories with many commits, providing a token with `--token` or `GITHUB_TOKEN` is strongly recommended.
 
+## Building
+
+Build a standalone binary with no Python dependency required at runtime:
+
+```bash
+# Using the build script
+python build.py
+
+# Or directly with PyInstaller
+pip install pyinstaller
+pyinstaller --onefile --name octosus --clean octosus.py
+```
+
+The binary will be at `./dist/octosus`. Copy it anywhere on your `$PATH`:
+
+```bash
+sudo cp dist/octosus /usr/local/bin/
+octosus https://github.com/user/repo
+```
+
 ## Requirements
 
 - Python 3.10+
 - `requests`
 - `rich`
+- `pyinstaller` (build only)
