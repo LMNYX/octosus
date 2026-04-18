@@ -1,6 +1,6 @@
 # Octosus
 
-A command-line tool that crawls the entire commit history of a GitHub repository and downloads every unique file that ever existed in it. Features a live terminal UI and multithreaded downloads.
+A command-line tool that crawls the entire commit history of a GitHub repository and downloads every unique file that ever existed in it.
 
 ## What it does
 

@@ -4,12 +4,12 @@ import argparse
 import hashlib
 import os
 import re
+import shutil
 import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from queue import Queue
 
 try:
     import requests
@@ -91,6 +91,10 @@ class KeyListener:
         return self.quit_event.is_set()
 
 
+class FetchError(Exception):
+    pass
+
+
 class Octosus:
     API = "https://api.github.com"
     RAW = "https://raw.githubusercontent.com"
@@ -151,7 +155,14 @@ class Octosus:
     def _api(self, path: str, params: dict | None = None) -> requests.Response:
         url = f"{self.API}{path}"
         while True:
-            r = self.session.get(url, params=params, timeout=30)
+            try:
+                r = self.session.get(url, params=params, timeout=30)
+            except requests.ConnectionError as exc:
+                raise FetchError(f"Connection failed: {exc}")
+            except requests.Timeout:
+                raise FetchError("Request timed out after 30s")
+            except requests.RequestException as exc:
+                raise FetchError(f"Request error: {exc}")
             self._check_rate(r)
             if r.status_code == 403 and "rate limit" in r.text.lower():
                 wait = max(0, (self.rate_reset or int(time.time()) + 60) - int(time.time())) + 2
@@ -160,18 +171,22 @@ class Octosus:
                 continue
             return r
 
-    def fetch_commits(self) -> list[dict]:
+    def fetch_commits(self, on_progress=None) -> list[dict]:
         commits = []
         page = 1
         while True:
-            self.log(f"Fetching commits page {page}")
             r = self._api(f"/repos/{self.owner}/{self.repo}/commits", {
                 "per_page": 100,
                 "page": page,
             })
+            if r.status_code == 404:
+                raise FetchError("Repository not found (404). Check the URL and permissions.")
+            if r.status_code == 401:
+                raise FetchError("Authentication failed (401). Check your token.")
+            if r.status_code == 403:
+                raise FetchError(f"Access denied (403): {r.json().get('message', 'unknown')}")
             if r.status_code != 200:
-                self.log(f"Commits fetch failed ({r.status_code})", "red")
-                break
+                raise FetchError(f"API returned HTTP {r.status_code}: {r.text[:200]}")
             data = r.json()
             if not data:
                 break
@@ -183,6 +198,8 @@ class Octosus:
                     "author": c["commit"]["author"]["name"],
                     "date": c["commit"]["author"]["date"],
                 })
+            if on_progress:
+                on_progress(page, len(commits))
             if len(data) < 100:
                 break
             page += 1
@@ -215,7 +232,7 @@ class Octosus:
 
     def save(self, relpath: str, data: bytes):
         p = Path(relpath)
-        sha = hashlib.sha256(data).hexdigest()
+        sha = hashlib.sha256(data).hexdigest()[:12]
         dest = self.out / p.parent / f"{sha}{p.stem}{p.suffix}"
         with self._save_lock:
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -306,13 +323,18 @@ class Octosus:
         )
         return layout
 
+    def _cleanup_output(self, existed_before: bool):
+        if not existed_before and self.out.exists():
+            shutil.rmtree(self.out, ignore_errors=True)
+
     def run(self):
         console = Console()
+        out_existed = self.out.exists()
 
         console.print()
         console.print(Panel(
-            "[bold bright_white]Octosus -- GitHub File Archaeologist[/]\n"
-            f"[dim]Excavating every unique file from[/] "
+            "[bold bright_white]Octosus -- GitHub Snooper[/]\n"
+            f"[dim]Snooping every unique file from[/] "
             f"[bold bright_cyan]{self.owner}/{self.repo}[/]\n"
             f"[dim]Output ->[/] [bright_green]{self.out.resolve()}[/]\n"
             f"[dim]Threads:[/] [bright_yellow]{self.threads}[/]",
@@ -321,11 +343,61 @@ class Octosus:
         ))
         console.print()
 
-        with console.status("[bold cyan]Fetching commit history[/]"):
-            commits = self.fetch_commits()
+        commits = None
+        status_handle = None
+
+        def _on_progress(page, count):
+            if status_handle:
+                status_handle.update(
+                    f"[bold cyan]Fetching commit history  "
+                    f"(page {page}, {count} commits)[/]"
+                )
+
+        while commits is None:
+            try:
+                with console.status(
+                    "[bold cyan]Fetching commit history[/]"
+                ) as status:
+                    status_handle = status
+                    commits = self.fetch_commits(on_progress=_on_progress)
+                    status_handle = None
+
+            except FetchError as exc:
+                status_handle = None
+                console.print()
+                console.print(Panel(
+                    f"[bold bright_red]Error fetching commits[/]\n\n"
+                    f"[white]{exc}[/]\n\n"
+                    f"[dim]Press [/dim][bold]r[/bold][dim] to retry or [/dim][bold]q[/bold][dim] to quit.[/dim]",
+                    border_style="red",
+                    title="[bold red]Fetch Failed[/]",
+                    padding=(1, 2),
+                ))
+
+                import tty, termios
+                try:
+                    fd = sys.stdin.fileno()
+                    old = termios.tcgetattr(fd)
+                    tty.setcbreak(fd)
+                    while True:
+                        ch = sys.stdin.read(1).lower()
+                        if ch == "r":
+                            console.print("[bold cyan]Retrying...[/]\n")
+                            break
+                        if ch == "q":
+                            self._cleanup_output(out_existed)
+                            console.print("[dim]Exiting.[/]")
+                            return
+                    termios.tcsetattr(fd, termios.TCSADRAIN, old)
+                except Exception:
+                    self._cleanup_output(out_existed)
+                    return
+                commits = None
+                continue
 
         if not commits:
-            console.print("[bold red]No commits found or API error.[/]")
+            console.print("[bold red]No commits found in this repository.[/]")
+            self._cleanup_output(out_existed)
             return
 
         self.total_commits = len(commits)
@@ -419,9 +491,9 @@ class Octosus:
                 live.update(self._layout(cprog, fprog))
 
         console.print()
-        title = "[bold bright_white]Excavation Complete[/]"
+        title = "[bold bright_white]Snooping Complete[/]"
         if self.aborted:
-            title = "[bold bright_yellow]Excavation Aborted (partial)[/]"
+            title = "[bold bright_yellow]Snooping Aborted (partial)[/]"
         summ = Table(
             box=box.DOUBLE_EDGE,
             border_style="bright_green",
