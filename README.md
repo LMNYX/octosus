@@ -13,7 +13,7 @@ Octosus iterates through every commit in a repository (oldest to newest), inspec
 ## Installation
 
 ```bash
-git clone https://github.com/youruser/octosus.git
+git clone https://github.com/LMNYX/octosus.git
 cd octosus
 python3 -m venv .venv
 source .venv/bin/activate
